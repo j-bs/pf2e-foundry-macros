@@ -1,3 +1,8 @@
+/**
+ * This macro helps step through the [Learn A Spell] downtime action for a spellcaster.
+ * It assumes the character is a Wizard and rolls the skill check with Arcana for now.
+ */
+
 if (!actor || canvas.tokens.controlled.length !== 1) {
   ui.notifications.warn(`You must select your token.`);
   return;

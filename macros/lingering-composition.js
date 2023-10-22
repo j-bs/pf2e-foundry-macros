@@ -1,3 +1,8 @@
+/**
+ * This macro helps extend the duration of an active [Inspire Courage] buff effect based on the outcome
+ * of a [Lingering Composition] performance skill check.
+ */
+
 if (!actor) {
   ui.notifications.warn(`You must select your token.`);
 }
