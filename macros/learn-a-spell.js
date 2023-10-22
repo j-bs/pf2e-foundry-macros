@@ -1,5 +1,5 @@
 /**
- * This macro helps step through the [Learn A Spell] downtime action for a spellcaster.
+ * This macro helps step through the [Learn A Spell] activity for a spellcaster.
  * It assumes the character is a Wizard and rolls the skill check with Arcana for now.
  */
 
