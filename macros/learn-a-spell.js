@@ -63,8 +63,6 @@ const compiledSpellLevelTemplate = Handlebars.compile(spellLevelTemplate);
 const spellLevelFormHtml = compiledSpellLevelTemplate({ learnSpellData });
 
 let spell = {};
-let spellList = game.packs.get("pf2e.spells-srd");
-console.log(spellList);
 
 await Dialog.wait({
   title: dialogTitle,
@@ -74,22 +72,15 @@ await Dialog.wait({
       label: "Continue",
     },
   },
-  render: async (html) => {
-    // load spells after dialog is rendered to hide load time
-    let t0 = performance.now();
-    spellList = await spellList.getDocuments();
-    let t1 = performance.now();
-    console.log(`Retrieved spell list in ${t1 - t0}ms.`);
-
+  render: (html) => {
     const dragSpellEl = html.find("#target-spell")[0];
+
+    // configure onDrop event for target spell
     dragSpellEl.ondrop = async (event) => {
       event.preventDefault();
       const droppedSpell = JSON.parse(event.dataTransfer.getData("text/plain"));
-      let spellId = droppedSpell.uuid.replace(
-        "Compendium.pf2e.spells-srd.",
-        ""
-      );
-      spell = spellList.find((s) => s.id === spellId);
+      spell = (await fromUuid(droppedSpell.uuid)).toObject();
+
       if (!spell) {
         return;
       }
@@ -98,6 +89,8 @@ await Dialog.wait({
 
       // remove existing row highlight
       html.find(`tr`).css("font-weight", "").css("border", "");
+
+      // add highlight for target spell level
       const spellLevelRow = html.find(`#row-${spell.system.level.value}`);
       spellLevelRow
         ?.css("font-weight", "bold")
@@ -167,7 +160,7 @@ await Dialog.wait({
   },
 });
 
-options = [`test`];
+options = [];
 notes = [
   {
     outcome: ["criticalSuccess"],
