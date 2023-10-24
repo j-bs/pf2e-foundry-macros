@@ -1,6 +1,10 @@
 /**
  * This macro helps step through the [Learn A Spell] activity for a spellcaster.
- * It assumes the character is a Wizard and rolls the skill check with Arcana for now.
+ * For now, it assumes the character is a Wizard and rolls the skill check with Arcana.
+ *
+ * Improvements todo:
+ *  - Automate adding spell to spell list on success.
+ *  - Automate DC adjustments for uncommon/rare.
  */
 
 if (!actor || canvas.tokens.controlled.length !== 1) {
@@ -12,6 +16,7 @@ if (!actor.isSpellcaster) {
   return;
 }
 
+const debug = false;
 const dialogTitle = `${actor.name}: Learn A Spell`;
 const learnSpellData = [
   { level: 1, price: 2, dc: 15 },
@@ -27,17 +32,12 @@ const learnSpellData = [
 ];
 
 const spellLevelTemplate = `
-<p>
-    <div class="form-group">
-        <label for="spell-level">What level spell are you attempting to learn?</label>
-        <input id="target-spell" />
-        <select id="spell-level">
-            {{#each learnSpellData}}
-            <option value={{this.level}}>Level {{this.level}}</option>
-            {{/each}}
-        </select>
-    </div>
-</p>
+<div class="form-group">
+    <p>What spell are you attempting to learn?</p>
+    <input id="target-spell" placeholder="Drag and drop a compendium spell here..." style="width: 100%;"/>
+    <sub>Drag the spell from the Spell Compendium browser into this box.</sub>
+</div>
+
 <p>
     <table style="text-align: center">
         <caption>Costs and DCs for learning a spell</caption>
@@ -50,7 +50,7 @@ const spellLevelTemplate = `
         </thead>
         <tbody>
             {{#each learnSpellData}}
-            <tr>
+            <tr id="row-{{this.level}}">
                 <td>{{this.level}}</td>
                 <td>{{this.price}}</td>
                 <td>{{this.dc}}</td>
@@ -62,39 +62,66 @@ const spellLevelTemplate = `
 const compiledSpellLevelTemplate = Handlebars.compile(spellLevelTemplate);
 const spellLevelFormHtml = compiledSpellLevelTemplate({ learnSpellData });
 
-const spellLevel = await Dialog.wait({
+let spell = {};
+let spellList = game.packs.get("pf2e.spells-srd");
+console.log(spellList);
+
+await Dialog.wait({
   title: dialogTitle,
   content: spellLevelFormHtml,
   buttons: {
     roll: {
       label: "Continue",
-      callback: (html) => {
-        return +html.find(`select#spell-level`).val();
-      },
     },
   },
-  // render: (html) => {
-  //   // console.log(html.find("#target-spell"));
-  //   html.find("#target-spell")[0].addEventListender("drop", (event) => {
-  //     console.log(event);
-  //     event.preventDefault();
-  //     const targetSpell = event.dataTransfer.getData("text/plain");
-  //     console.log(targetSpell);
-  //   });
-  // },
+  render: async (html) => {
+    // load spells after dialog is rendered to hide load time
+    let t0 = performance.now();
+    spellList = await spellList.getDocuments();
+    let t1 = performance.now();
+    console.log(`Retrieved spell list in ${t1 - t0}ms.`);
+
+    const dragSpellEl = html.find("#target-spell")[0];
+    dragSpellEl.ondrop = async (event) => {
+      event.preventDefault();
+      const droppedSpell = JSON.parse(event.dataTransfer.getData("text/plain"));
+      let spellId = droppedSpell.uuid.replace(
+        "Compendium.pf2e.spells-srd.",
+        ""
+      );
+      spell = spellList.find((s) => s.id === spellId);
+      if (!spell) {
+        return;
+      }
+
+      dragSpellEl.value = spell.name;
+
+      // remove existing row highlight
+      html.find(`tr`).css("font-weight", "").css("border", "");
+      const spellLevelRow = html.find(`#row-${spell.system.level.value}`);
+      spellLevelRow
+        ?.css("font-weight", "bold")
+        .css("border", "1px black solid");
+    };
+  },
 });
 
-console.log(`Player selected to learn a Level ${spellLevel} spell.`);
+console.log(
+  `Player selected to learn ${spell.name}, a Level ${spell.system.level.value} spell.`
+);
 
-let selectedData = learnSpellData.find((d) => d.level === spellLevel);
-
-if (!selectedData) {
+if (!spell) {
   ui.notifications.warn(`You must select a Spell Level to learn.`);
+  return;
 }
 
+let targetLevel = spell.system.level.value;
+let targetDC = learnSpellData.find((d) => d.level === targetLevel)?.dc;
+let targetPrice = learnSpellData.find((d) => d.level === targetLevel)?.price;
+
 const rollLearnTemplate = `
-<p>You are attempting to learn a <b>Level ${selectedData.level}</b> spell.</p>
-<p>You need to succeed on a <b>DC ${selectedData.dc}</b> skill check.</p>
+<p>You are attempting to learn <b>${spell.name} (Level ${targetLevel})</b>.</p>
+<p>You need to succeed on a <b>DC ${targetDC}</b> skill check.</p>
 <p>The outcomes for this attempt are summarised below:</p>
 <table style="text-align: center">
     <thead>
@@ -108,12 +135,12 @@ const rollLearnTemplate = `
         <tr style="color:green">
             <td >Critical Success</td>
             <td>Yes</td>
-            <td>${selectedData.price / 2}</td>
+            <td>${targetPrice / 2}</td>
         </tr>
         <tr>
             <td>Success</td>
             <td>Yes</td>
-            <td>${selectedData.price}</td>
+            <td>${targetPrice}</td>
         </tr>
         <tr>
             <td>Failure</td>
@@ -123,11 +150,11 @@ const rollLearnTemplate = `
         <tr style="color:red">
             <td>Critical Failure</td>
             <td>No *</td>
-            <td>${selectedData.price / 2}</td>
+            <td>${targetPrice / 2}</td>
         </tr>
     </tbody>
 </table>
-<p><em>* On a failure or critical failure you cannot try again until you gain a level.</em></p>`;
+<p><em>* On any failure you cannot try again until you gain a level.</em></p>`;
 
 await Dialog.wait({
   title: dialogTitle,
@@ -140,32 +167,31 @@ await Dialog.wait({
   },
 });
 
-targetDC = selectedData.dc;
 options = [`test`];
 notes = [
   {
     outcome: ["criticalSuccess"],
     selector: "arcana",
-    text: `<p>You learn the Spell and expend only half of the materials: <b>${
-      selectedData.price / 2
-    }gp</b>.</p>`,
+    text: `You learn the Spell and expend materials worth <b>${
+      targetPrice / 2
+    }gp</b>.`,
   },
   {
     outcome: ["success"],
     selector: "arcana",
-    text: `<p>You learn the Spell and expend all of the materials: <b>${selectedData.price}gp</b>.</p>`,
+    text: `You learn the Spell and expend materials worth <b>${targetPrice}gp</b>.`,
   },
   {
     outcome: ["failure"],
     selector: "arcana",
-    text: `<p>You do not learn the Spell.</p>`,
+    text: `You do not learn the Spell.`,
   },
   {
     outcome: ["criticalFailure"],
     selector: "arcana",
-    text: `<p>You do not learn the Spell and you must expend half of the materials: <b>${
-      selectedData.price / 2
-    }gp</b>.</p>`,
+    text: `You do not learn the Spell and expend materials worth <b>${
+      targetPrice / 2
+    }gp</b>.`,
   },
 ];
 
@@ -176,7 +202,7 @@ const rollResult = await game.pf2e.Check.roll(
     token: token ?? null,
     type: "skill-check",
     action: "learn-a-spell",
-    title: `Skill Check: Learning a Spell (Lv ${selectedData.level})`,
+    title: `Skill Check: Learning a Spell (${spell.name} Lv ${targetLevel})`,
     options,
     notes,
     dc: { value: targetDC },
@@ -184,7 +210,7 @@ const rollResult = await game.pf2e.Check.roll(
 );
 
 // determine price based on outcome
-let resultPrice = selectedData.price;
+let resultPrice = targetPrice;
 if (
   rollResult.options.degreeOfSuccess === 0 ||
   rollResult.options.degreeOfSuccess === 3
@@ -201,23 +227,23 @@ if (resultPrice > 0) {
   );
 
   if (playerGold?.system?.quantity >= resultPrice) {
-    spendGoldResult = await Dialog.wait({
+    let spendGoldResult = await Dialog.wait({
       title: dialogTitle,
       content: `<p>Deduct the required <b>${resultPrice}gp</b> from your inventory (<em>${playerGold?.system?.quantity}gp</em>)?</p>`,
       buttons: {
         yes: {
           label: "Yes",
-          callback: () => 1,
+          callback: () => true,
         },
         no: {
           label: "No",
-          callback: () => 0,
+          callback: () => false,
         },
       },
       default: "yes",
     });
 
-    if (!!spendGoldResult) {
+    if (spendGoldResult && !debug) {
       try {
         const adjustedGold = duplicate(playerGold);
         adjustedGold.system.quantity -= resultPrice;
@@ -232,7 +258,7 @@ if (resultPrice > 0) {
         `Spent <b>${resultPrice}gp</b> from inventory for <em>Learning a Spell</em>.`
       );
       ChatMessage.create({
-        content: `<em>I successfully learned a new Level <b>${spellLevel}</b> spell and spent <b>${resultPrice}gp</b> on materials.</em>`,
+        content: `<em>I successfully learned a new spell (<b>${spell.name} - Level ${targetLevel})</b> and spent <b>${resultPrice}gp</b> on materials.</em>`,
         speaker: ChatMessage.getSpeaker({ actor: actor }),
       });
     }
@@ -242,3 +268,6 @@ if (resultPrice > 0) {
     );
   }
 }
+
+// TODO: add spell entry to prepared list for wiz
+// actor.spellcasting.find(s => s.system.prepared.value === "prepared" && !s.system.prepared.flexible)
