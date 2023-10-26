@@ -3,8 +3,8 @@
  * For now, it assumes the character is a Wizard and rolls the skill check with Arcana.
  *
  * Improvements todo:
- *  - Automate adding spell to spell list on success.
  *  - Automate DC adjustments for uncommon/rare.
+ *  - Restrict spell options to highest level available in spellcasting entry
  */
 
 if (!actor || canvas.tokens.controlled.length !== 1) {
@@ -79,9 +79,16 @@ await Dialog.wait({
     dragSpellEl.ondrop = async (event) => {
       event.preventDefault();
       const droppedSpell = JSON.parse(event.dataTransfer.getData("text/plain"));
-      spell = (await fromUuid(droppedSpell.uuid)).toObject();
+
+      // get 'complete' spell object directly from compendium
+      spell = await game.packs
+        .get("pf2e.spells-srd")
+        .getDocument(parseUuid(droppedSpell.uuid).documentId);
 
       if (!spell) {
+        ui.notifications.error(
+          `Something went wrong, could not load spell details`
+        );
         return;
       }
 
@@ -202,6 +209,31 @@ const rollResult = await game.pf2e.Check.roll(
   }
 );
 
+// add spell to prepared spell list
+if (
+  rollResult.options.degreeOfSuccess === 2 ||
+  rollResult.options.degreeOfSuccess === 3
+) {
+  let spellcastingEntry = actor.spellcasting.find(
+    (s) => s.system.prepared.value === "prepared" && !s.system.prepared.flexible
+  );
+
+  if (!spellcastingEntry) {
+    ui.notifications.error(
+      `Could not find spellcasting entry to automatically add new spell.`
+    );
+  }
+
+  try {
+    await spellcastingEntry.addSpell(spell);
+    ui.notifications.info(`Added ${spell.name} to your spellcasting list!`);
+  } catch {
+    ui.notifications.error(
+      `Something went wrong while adding new spell to spellcasting entry.`
+    );
+  }
+}
+
 // determine price based on outcome
 let resultPrice = targetPrice;
 if (
@@ -261,6 +293,3 @@ if (resultPrice > 0) {
     );
   }
 }
-
-// TODO: add spell entry to prepared list for wiz
-// actor.spellcasting.find(s => s.system.prepared.value === "prepared" && !s.system.prepared.flexible)
