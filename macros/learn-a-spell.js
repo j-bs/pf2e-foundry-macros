@@ -4,7 +4,6 @@
  *
  * Improvements todo:
  *  - Automate DC adjustments for uncommon/rare.
- *  - Restrict spell options to highest level available in spellcasting entry
  */
 
 if (!actor || canvas.tokens.controlled.length !== 1) {
@@ -63,6 +62,10 @@ const compiledSpellLevelTemplate = Handlebars.compile(spellLevelTemplate);
 const spellLevelFormHtml = compiledSpellLevelTemplate({ learnSpellData });
 
 let spell = {};
+const spellcastingEntry = actor.spellcasting.find(
+  (s) => s.system.prepared.value === "prepared" && !s.system.prepared.flexible
+);
+const maxSpellLevel = spellcastingEntry.highestLevel;
 
 await Dialog.wait({
   title: dialogTitle,
@@ -89,6 +92,16 @@ await Dialog.wait({
         ui.notifications.error(
           `Something went wrong, could not load spell details`
         );
+        return;
+      }
+      if (spell.system.level.value > maxSpellLevel) {
+        ui.notifications.warn(
+          `You cannot learn Level ${spell.system.level.value} spells yet.`
+        );
+        return;
+      }
+      if (spellcastingEntry.spells.getName(spell.name)) {
+        ui.notifications.warn(`You already know ${spell.name}.`);
         return;
       }
 
@@ -214,10 +227,6 @@ if (
   rollResult.options.degreeOfSuccess === 2 ||
   rollResult.options.degreeOfSuccess === 3
 ) {
-  let spellcastingEntry = actor.spellcasting.find(
-    (s) => s.system.prepared.value === "prepared" && !s.system.prepared.flexible
-  );
-
   if (!spellcastingEntry) {
     ui.notifications.error(
       `Could not find spellcasting entry to automatically add new spell.`
