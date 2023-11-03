@@ -6,6 +6,8 @@
  *  - Automate DC adjustments for uncommon/rare.
  */
 
+let actor = token.actor;
+
 if (!actor || canvas.tokens.controlled.length !== 1) {
   ui.notifications.warn(`You must select your token.`);
   return;
@@ -15,7 +17,7 @@ if (!actor.isSpellcaster) {
   return;
 }
 
-const debug = false;
+const dryRun = true; // don't deduct gold or add spell to known spells
 const dialogTitle = `${actor.name}: Learn A Spell`;
 const learnSpellData = [
   { level: 1, price: 2, dc: 15 },
@@ -29,6 +31,12 @@ const learnSpellData = [
   { level: 9, price: 1500, dc: 36 },
   { level: 10, price: 7000, dc: 41 },
 ];
+const traditionSkills = {
+  arcane: "arcana",
+  divine: "religion",
+  occult: "occultism",
+  primal: "nature",
+};
 
 const spellLevelTemplate = `
 <div class="form-group">
@@ -44,7 +52,7 @@ const spellLevelTemplate = `
             <tr>
                 <th>Spell Level</th>
                 <th>Price (gp)</th>
-                <th>Base DC</th>
+                <th>Suggested DC</th>
             </tr>
         </thead>
         <tbody>
@@ -61,11 +69,10 @@ const spellLevelTemplate = `
 const compiledSpellLevelTemplate = Handlebars.compile(spellLevelTemplate);
 const spellLevelFormHtml = compiledSpellLevelTemplate({ learnSpellData });
 
+const spellcasting = actor.spellcasting?.spellcastingFeatures[0];
+const maxSpellLevel = spellcasting.highestLevel;
+const spellTradition = spellcasting.system.tradition.value;
 let spell = {};
-const spellcastingEntry = actor.spellcasting.find(
-  (s) => s.system.prepared.value === "prepared" && !s.system.prepared.flexible
-);
-const maxSpellLevel = spellcastingEntry.highestLevel;
 
 await Dialog.wait({
   title: dialogTitle,
@@ -100,7 +107,7 @@ await Dialog.wait({
         );
         return;
       }
-      if (spellcastingEntry.spells.getName(spell.name)) {
+      if (spellcasting.spells.getName(spell.name)) {
         ui.notifications.warn(`You already know ${spell.name}.`);
         return;
       }
@@ -184,24 +191,24 @@ options = [];
 notes = [
   {
     outcome: ["criticalSuccess"],
-    selector: "arcana",
+    selector: traditionSkills[spellTradition],
     text: `You learn the Spell and expend materials worth <b>${
       targetPrice / 2
     }gp</b>.`,
   },
   {
     outcome: ["success"],
-    selector: "arcana",
+    selector: traditionSkills[spellTradition],
     text: `You learn the Spell and expend materials worth <b>${targetPrice}gp</b>.`,
   },
   {
     outcome: ["failure"],
-    selector: "arcana",
+    selector: traditionSkills[spellTradition],
     text: `You do not learn the Spell.`,
   },
   {
     outcome: ["criticalFailure"],
-    selector: "arcana",
+    selector: traditionSkills[spellTradition],
     text: `You do not learn the Spell and expend materials worth <b>${
       targetPrice / 2
     }gp</b>.`,
@@ -209,7 +216,10 @@ notes = [
 ];
 
 const rollResult = await game.pf2e.Check.roll(
-  new game.pf2e.CheckModifier(`learn-a-spell`, actor.skills.arcana),
+  new game.pf2e.CheckModifier(
+    `learn-a-spell`,
+    actor.skills[traditionSkills[spellTradition]]
+  ),
   {
     actor: actor,
     token: token ?? null,
@@ -222,11 +232,12 @@ const rollResult = await game.pf2e.Check.roll(
   }
 );
 
-// add spell to prepared spell list
-if (
+const success =
   rollResult.options.degreeOfSuccess === 2 ||
-  rollResult.options.degreeOfSuccess === 3
-) {
+  rollResult.options.degreeOfSuccess === 3;
+
+// add spell to prepared spell list
+if (!dryRun && success) {
   if (!spellcastingEntry) {
     ui.notifications.error(
       `Could not find spellcasting entry to automatically add new spell.`
@@ -260,45 +271,48 @@ if (resultPrice > 0) {
     (i) => i.name === "Gold Pieces"
   );
 
-  if (playerGold?.system?.quantity >= resultPrice) {
-    let spendGoldResult = await Dialog.wait({
-      title: dialogTitle,
-      content: `<p>Deduct the required <b>${resultPrice}gp</b> from your inventory (<em>${playerGold?.system?.quantity}gp</em>)?</p>`,
-      buttons: {
-        yes: {
-          label: "Yes",
-          callback: () => true,
-        },
-        no: {
-          label: "No",
-          callback: () => false,
-        },
-      },
-      default: "yes",
-    });
-
-    if (spendGoldResult && !debug) {
-      try {
-        const adjustedGold = duplicate(playerGold);
-        adjustedGold.system.quantity -= resultPrice;
-        await actor.updateEmbeddedDocuments("Item", [adjustedGold]);
-      } catch {
-        ui.notifications.error(
-          `Failed to deduct expended gold from inventory.`
-        );
-      }
-
-      ui.notifications.info(
-        `Spent <b>${resultPrice}gp</b> from inventory for <em>Learning a Spell</em>.`
-      );
-      ChatMessage.create({
-        content: `<em>I successfully learned a new spell (<b>${spell.name} - Level ${targetLevel})</b> and spent <b>${resultPrice}gp</b> on materials.</em>`,
-        speaker: ChatMessage.getSpeaker({ actor: actor }),
-      });
-    }
-  } else {
+  if (playerGold?.system?.quantity < resultPrice) {
     ui.notifications.warn(
       `You do not have enough gp to cover the price of Learning a Spell.`
     );
+    return;
+  }
+
+  let autoDeductGold = await Dialog.wait({
+    title: dialogTitle,
+    content: `<p>Deduct the required <b>${resultPrice}gp</b> from your inventory (<em>${playerGold?.system?.quantity}gp</em>)?</p>`,
+    buttons: {
+      yes: {
+        label: "Yes",
+        callback: () => true,
+      },
+      no: {
+        label: "No",
+        callback: () => false,
+      },
+    },
+    default: "yes",
+  });
+
+  if (autoDeductGold && !dryRun) {
+    try {
+      const adjustedGold = duplicate(playerGold);
+      adjustedGold.system.quantity -= resultPrice;
+      await actor.updateEmbeddedDocuments("Item", [adjustedGold]);
+    } catch {
+      ui.notifications.error(`Failed to deduct expended gold from inventory.`);
+    }
+
+    ui.notifications.info(
+      `Spent <b>${resultPrice}gp</b> from inventory for <em>Learning a Spell</em>.`
+    );
+    const chatMessage =
+      `<em>I ` +
+      (success ? `successfully learned` : `failed to learn`) +
+      ` a new spell (<b>${spell.name} - Level ${targetLevel})</b> and spent <b>${resultPrice}gp</b> on materials.</em>`;
+    ChatMessage.create({
+      content: chatMessage,
+      speaker: ChatMessage.getSpeaker({ actor: actor }),
+    });
   }
 }
