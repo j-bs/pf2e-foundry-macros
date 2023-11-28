@@ -1,5 +1,5 @@
 /**
- * This macro helps extend the duration of an active [Inspire Courage] buff effect based on the outcome
+ * This macro helps extend the duration of an active [Courageous Anthem] buff effect based on the outcome
  * of a [Lingering Composition] performance skill check.
  */
 
@@ -8,12 +8,12 @@ if (!actor) {
 }
 let spellEffects = actor.items.filter((i) => i.type === "effect");
 let inspireCourageEffect = spellEffects.find(
-  (e) => e.name === "Spell Effect: Inspire Courage" && !e.expired
+  (e) => e.name === "Spell Effect: Courageous Anthem" && !e.expired
 );
 
 if (!inspireCourageEffect) {
   ui.notifications.warn(
-    `You must have the 'Inspire Courage' effect active and not expired.`
+    `You must have the 'Courageous Anthem' effect active and not expired.`
   );
 }
 
