@@ -2,8 +2,9 @@
  * This macro helps step through the [Learn A Spell] activity for a spellcaster.
  * For now, it assumes the character is a Wizard and rolls the skill check with Arcana.
  *
- * Improvements todo:
+ * Pending improvements:
  *  - Automate DC adjustments for uncommon/rare.
+ *  - Add support for [Spellbook Prodigy]
  */
 
 let actor = token.actor;
@@ -17,7 +18,7 @@ if (!actor.isSpellcaster) {
   return;
 }
 
-const dryRun = true; // don't deduct gold or add spell to known spells
+const dryRun = false; // don't deduct gold or add spell to known spells
 const dialogTitle = `${actor.name}: Learn A Spell`;
 const learnSpellData = [
   { level: 1, price: 2, dc: 15 },
@@ -72,6 +73,9 @@ const spellLevelFormHtml = compiledSpellLevelTemplate({ learnSpellData });
 const spellcasting = actor.spellcasting?.spellcastingFeatures[0];
 const maxSpellLevel = spellcasting.highestLevel;
 const spellTradition = spellcasting.system.tradition.value;
+const spellbookProdigy = await fromUuid(
+  "Compendium.pf2e.feats-srd.Item.FCzfh8QHMo7QJpAM"
+);
 let spell = {};
 
 await Dialog.wait({
@@ -139,9 +143,12 @@ let targetLevel = spell.system.level.value;
 let targetDC = learnSpellData.find((d) => d.level === targetLevel)?.dc;
 let targetPrice = learnSpellData.find((d) => d.level === targetLevel)?.price;
 
-const rollLearnTemplate = `
-<p>You are attempting to learn <b>${spell.name} (Level ${targetLevel})</b>.</p>
+const rollLearnTemplate =
+  `<p>You are attempting to learn <b>${spell.name} (Level ${targetLevel})</b>.</p>
 <p>You need to succeed on a <b>DC ${targetDC}</b> skill check.</p>
+<p>Attempting to learn this spell will take <b>${targetLevel} hour` +
+  (targetLevel > 1 ? `s` : "") +
+  `</b>, regardless of the outcome.</p>
 <p>The outcomes for this attempt are summarised below:</p>
 <table style="text-align: center">
     <thead>
@@ -174,7 +181,7 @@ const rollLearnTemplate = `
         </tr>
     </tbody>
 </table>
-<p><em>* On any failure you cannot try again until you gain a level.</em></p>`;
+<p><em>* On any failure you cannot try again until you gain a level. Wizards can reduce to <b>one week</b> by taking the <b>Spellbook Prodigy</b> class feat.</em></p>`;
 
 await Dialog.wait({
   title: dialogTitle,
