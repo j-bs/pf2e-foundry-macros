@@ -4,7 +4,6 @@
  *
  * Pending improvements:
  *  - Automate DC adjustments for uncommon/rare.
- *  - Add support for [Spellbook Prodigy]
  */
 
 let actor = token.actor;
@@ -73,9 +72,12 @@ const spellLevelFormHtml = compiledSpellLevelTemplate({ learnSpellData });
 const spellcasting = actor.spellcasting?.spellcastingFeatures[0];
 const maxSpellLevel = spellcasting.highestLevel;
 const spellTradition = spellcasting.system.tradition.value;
-const spellbookProdigy = await fromUuid(
-  "Compendium.pf2e.feats-srd.Item.FCzfh8QHMo7QJpAM"
-);
+const hasMagicalShorthand = actor.items.filter(
+  (i) => i.system.slug === "magical-shorthand"
+)?.length;
+const hasSpellbookProdigy = actor.items.filter(
+  (i) => i.system.slug === "spellbook-prodigy"
+)?.length;
 let spell = {};
 
 await Dialog.wait({
@@ -95,9 +97,7 @@ await Dialog.wait({
       const droppedSpell = JSON.parse(event.dataTransfer.getData("text/plain"));
 
       // get 'complete' spell object directly from compendium
-      spell = await game.packs
-        .get("pf2e.spells-srd")
-        .getDocument(parseUuid(droppedSpell.uuid).documentId);
+      spell = await fromUuid(droppedSpell.uuid);
 
       if (!spell) {
         ui.notifications.error(
@@ -111,7 +111,7 @@ await Dialog.wait({
         );
         return;
       }
-      if (spellcasting.spells.getName(spell.name)) {
+      if (spellcasting?.spells.getName(spell.name)) {
         ui.notifications.warn(`You already know ${spell.name}.`);
         return;
       }
@@ -142,13 +142,16 @@ if (!spell) {
 let targetLevel = spell.system.level.value;
 let targetDC = learnSpellData.find((d) => d.level === targetLevel)?.dc;
 let targetPrice = learnSpellData.find((d) => d.level === targetLevel)?.price;
+const timeTaken = hasMagicalShorthand
+  ? "10 minutes"
+  : `${targetLevel} hour` + (targetLevel > 1 ? `s` : "");
 
 const rollLearnTemplate =
-  `<p>You are attempting to learn <b>${spell.name} (Level ${targetLevel})</b>.</p>
+  `<p>You are attempting to learn <b>${
+    spell.name
+  } (Level ${targetLevel})</b>.</p>
 <p>You need to succeed on a <b>DC ${targetDC}</b> skill check.</p>
-<p>Attempting to learn this spell will take <b>${targetLevel} hour` +
-  (targetLevel > 1 ? `s` : "") +
-  `</b>, regardless of the outcome.</p>
+<p>Attempting to learn this spell will take <b>${timeTaken}</b>, regardless of the outcome.</p>
 <p>The outcomes for this attempt are summarised below:</p>
 <table style="text-align: center">
     <thead>
@@ -160,7 +163,7 @@ const rollLearnTemplate =
     </thead>
     <tbody>
         <tr style="color:green">
-            <td >Critical Success</td>
+            <td>Critical Success</td>
             <td>Yes</td>
             <td>${targetPrice / 2}</td>
         </tr>
@@ -181,7 +184,11 @@ const rollLearnTemplate =
         </tr>
     </tbody>
 </table>
-<p><em>* On any failure you cannot try again until you gain a level. Wizards can reduce to <b>one week</b> by taking the <b>Spellbook Prodigy</b> class feat.</em></p>`;
+<p><em>* On any failure you cannot try again until` + hasMagicalShorthand
+    ? ` one week passes or `
+    : "" + `you gain a level.` + !hasMagicalShorthand
+    ? ` You can reduce this to <b>one week</b> by having the <a class="content-link" draggable="true" data-uuid="Compendium.pf2e.feats-srd.Item.v7Bt6hjmzYnLFLeG" data-id="v7Bt6hjmzYnLFLeG" data-type="Item" data-pack="pf2e.feats-srd" data-tooltip="Feat/Feature Item"><i class="fa-solid fa-medal"></i>Magical Shorthand</a> skill feat.</em></p>`
+    : "";
 
 await Dialog.wait({
   title: dialogTitle,
@@ -194,33 +201,48 @@ await Dialog.wait({
   },
 });
 
-options = [];
+options = [...actor.getRollOptions()];
 notes = [
   {
     outcome: ["criticalSuccess"],
     selector: traditionSkills[spellTradition],
-    text: `You learn the Spell and expend materials worth <b>${
-      targetPrice / 2
-    }gp</b>.`,
+    text: `<b>Critical Success</b> You learn @UUID[${
+      spell.uuid
+    }] and expend materials worth <b>${targetPrice / 2}gp</b>.`,
   },
   {
     outcome: ["success"],
     selector: traditionSkills[spellTradition],
-    text: `You learn the Spell and expend materials worth <b>${targetPrice}gp</b>.`,
+    text: `<b>Success</b> You learn @UUID[${spell.uuid}] and expend materials worth <b>${targetPrice}gp</b>.`,
   },
   {
     outcome: ["failure"],
     selector: traditionSkills[spellTradition],
-    text: `You do not learn the Spell.`,
+    text: `<b>Failure</b> You do not learn @UUID[${spell.uuid}].`,
   },
   {
     outcome: ["criticalFailure"],
     selector: traditionSkills[spellTradition],
-    text: `You do not learn the Spell and expend materials worth <b>${
-      targetPrice / 2
-    }gp</b>.`,
+    text: `<b>Critical Failure</b> You do not learn @UUID[${
+      spell.uuid
+    }] and expend materials worth <b>${targetPrice / 2}gp</b>.`,
   },
 ];
+const dosAdjustments = [];
+if (hasMagicalShorthand) {
+  dosAdjustments.push({
+    adjustments: {
+      success: { label: "Magical Shorthand", amount: "criticalSuccess" },
+    },
+  });
+}
+if (hasSpellbookProdigy) {
+  dosAdjustments.push({
+    adjustments: {
+      criticalFailure: { label: "Spellbook Prodigy", amount: "failure" },
+    },
+  });
+}
 
 const rollResult = await game.pf2e.Check.roll(
   new game.pf2e.CheckModifier(
@@ -228,14 +250,16 @@ const rollResult = await game.pf2e.Check.roll(
     actor.skills[traditionSkills[spellTradition]]
   ),
   {
+    type: ["skill-check"],
+    identifier: "learn-a-spell",
+    action: "learn-a-spell",
     actor: actor,
     token: token ?? null,
-    type: "skill-check",
-    action: "learn-a-spell",
     title: `Skill Check: Learning a Spell (${spell.name} Lv ${targetLevel})`,
     options,
     notes,
     dc: { value: targetDC },
+    dosAdjustments,
   }
 );
 
@@ -245,14 +269,14 @@ const success =
 
 // add spell to prepared spell list
 if (!dryRun && success) {
-  if (!spellcastingEntry) {
+  if (!spellcasting) {
     ui.notifications.error(
       `Could not find spellcasting entry to automatically add new spell.`
     );
   }
 
   try {
-    await spellcastingEntry.addSpell(spell);
+    await spellcasting.addSpell(spell);
     ui.notifications.info(`Added ${spell.name} to your spellcasting list!`);
   } catch {
     ui.notifications.error(
@@ -302,17 +326,14 @@ if (resultPrice > 0) {
   });
 
   if (autoDeductGold && !dryRun) {
-    try {
-      const adjustedGold = duplicate(playerGold);
-      adjustedGold.system.quantity -= resultPrice;
-      await actor.updateEmbeddedDocuments("Item", [adjustedGold]);
-    } catch {
+    if (!actor.inventory.removeCoins({ gp: resultPrice })) {
       ui.notifications.error(`Failed to deduct expended gold from inventory.`);
+    } else {
+      ui.notifications.info(
+        `Spent <b>${resultPrice}gp</b> from inventory for <em>Learning a Spell</em>.`
+      );
     }
 
-    ui.notifications.info(
-      `Spent <b>${resultPrice}gp</b> from inventory for <em>Learning a Spell</em>.`
-    );
     const chatMessage =
       `<em>I ` +
       (success ? `successfully learned` : `failed to learn`) +
