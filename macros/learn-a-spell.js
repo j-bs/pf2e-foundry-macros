@@ -175,7 +175,7 @@ const rollLearnTemplate =
         <tr>
             <td>Failure</td>
             <td>No *</td>
-            <td>N/A</td>
+            <td>–</td>
         </tr>
         <tr style="color:red">
             <td>Critical Failure</td>
@@ -184,11 +184,12 @@ const rollLearnTemplate =
         </tr>
     </tbody>
 </table>
-<p><em>* On any failure you cannot try again until` + hasMagicalShorthand
-    ? ` one week passes or `
-    : "" + `you gain a level.` + !hasMagicalShorthand
+<p><em>* On any failure you cannot try again until` +
+  (hasMagicalShorthand ? ` one week passes or ` : "") +
+  `you gain a level.` +
+  (!hasMagicalShorthand
     ? ` You can reduce this to <b>one week</b> by having the <a class="content-link" draggable="true" data-uuid="Compendium.pf2e.feats-srd.Item.v7Bt6hjmzYnLFLeG" data-id="v7Bt6hjmzYnLFLeG" data-type="Item" data-pack="pf2e.feats-srd" data-tooltip="Feat/Feature Item"><i class="fa-solid fa-medal"></i>Magical Shorthand</a> skill feat.</em></p>`
-    : "";
+    : "");
 
 await Dialog.wait({
   title: dialogTitle,
@@ -208,7 +209,9 @@ notes = [
     selector: traditionSkills[spellTradition],
     text: `<b>Critical Success</b> You learn @UUID[${
       spell.uuid
-    }] and expend materials worth <b>${targetPrice / 2}gp</b>.`,
+    }] and expend only half of the materials worth <b>${
+      targetPrice / 2
+    }gp</b>.`,
   },
   {
     outcome: ["success"],
@@ -225,7 +228,7 @@ notes = [
     selector: traditionSkills[spellTradition],
     text: `<b>Critical Failure</b> You do not learn @UUID[${
       spell.uuid
-    }] and expend materials worth <b>${targetPrice / 2}gp</b>.`,
+    }] and expend half of the materials worth <b>${targetPrice / 2}gp</b>.`,
   },
 ];
 const dosAdjustments = [];
@@ -286,32 +289,18 @@ if (!dryRun && success) {
 }
 
 // determine price based on outcome
-let resultPrice = targetPrice;
-if (
-  rollResult.options.degreeOfSuccess === 0 ||
-  rollResult.options.degreeOfSuccess === 3
-) {
-  resultPrice /= 2;
-} else if (rollResult.options.degreeOfSuccess === 1) {
-  resultPrice = 0;
-}
+let resultPrice =
+  rollResult.options.degreeOfSuccess === 2
+    ? targetPrice
+    : rollResult.options.degreeOfSuccess === 0 ||
+      rollResult.options.degreeOfSuccess === 3
+    ? targetPrice / 2
+    : 0;
 
 if (resultPrice > 0) {
-  // find Player's gold stash.
-  const playerGold = actor.itemTypes.treasure.find(
-    (i) => i.name === "Gold Pieces"
-  );
-
-  if (playerGold?.system?.quantity < resultPrice) {
-    ui.notifications.warn(
-      `You do not have enough gp to cover the price of Learning a Spell.`
-    );
-    return;
-  }
-
   let autoDeductGold = await Dialog.wait({
     title: dialogTitle,
-    content: `<p>Deduct the required <b>${resultPrice}gp</b> from your inventory (<em>${playerGold?.system?.quantity}gp</em>)?</p>`,
+    content: `<p>Deduct the <b>${resultPrice}gp</b> material cost from your inventory?</p>`,
     buttons: {
       yes: {
         label: "Yes",
@@ -326,21 +315,22 @@ if (resultPrice > 0) {
   });
 
   if (autoDeductGold && !dryRun) {
-    if (!actor.inventory.removeCoins({ gp: resultPrice })) {
-      ui.notifications.error(`Failed to deduct expended gold from inventory.`);
+    if (!(await actor.inventory.removeCoins({ gp: resultPrice }))) {
+      ui.notifications.error(
+        `Failed to deduct expended gold from your inventory. Take a loan from a party member?`
+      );
     } else {
       ui.notifications.info(
         `Spent <b>${resultPrice}gp</b> from inventory for <em>Learning a Spell</em>.`
       );
     }
-
-    const chatMessage =
-      `<em>I ` +
-      (success ? `successfully learned` : `failed to learn`) +
-      ` a new spell (<b>${spell.name} - Level ${targetLevel})</b> and spent <b>${resultPrice}gp</b> on materials.</em>`;
-    ChatMessage.create({
-      content: chatMessage,
-      speaker: ChatMessage.getSpeaker({ actor: actor }),
-    });
   }
+
+  const chatMessage = `Spent <b>${resultPrice}gp</b> worth of materials while learning @UUID[${spell.uuid}].`;
+  ChatMessage.create({
+    flavor: "Learn a Spell",
+    content: chatMessage,
+    speaker: ChatMessage.getSpeaker({ actor: actor }),
+    type: CONST.CHAT_MESSAGE_TYPES.EMOTE,
+  });
 }
