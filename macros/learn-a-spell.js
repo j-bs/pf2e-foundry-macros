@@ -20,16 +20,16 @@ if (!actor.isSpellcaster) {
 const dryRun = false; // don't deduct gold or add spell to known spells
 const dialogTitle = `${actor.name}: Learn A Spell`;
 const learnSpellData = [
-  { level: 1, price: 2, dc: 15 },
-  { level: 2, price: 6, dc: 18 },
-  { level: 3, price: 16, dc: 20 },
-  { level: 4, price: 36, dc: 23 },
-  { level: 5, price: 70, dc: 26 },
-  { level: 6, price: 140, dc: 28 },
-  { level: 7, price: 300, dc: 31 },
-  { level: 8, price: 650, dc: 34 },
-  { level: 9, price: 1500, dc: 36 },
-  { level: 10, price: 7000, dc: 41 },
+  { rank: 1, price: 2, dc: 15 },
+  { rank: 2, price: 6, dc: 18 },
+  { rank: 3, price: 16, dc: 20 },
+  { rank: 4, price: 36, dc: 23 },
+  { rank: 5, price: 70, dc: 26 },
+  { rank: 6, price: 140, dc: 28 },
+  { rank: 7, price: 300, dc: 31 },
+  { rank: 8, price: 650, dc: 34 },
+  { rank: 9, price: 1500, dc: 36 },
+  { rank: 10, price: 7000, dc: 41 },
 ];
 const traditionSkills = {
   arcane: "arcana",
@@ -38,11 +38,11 @@ const traditionSkills = {
   primal: "nature",
 };
 
-const spellLevelTemplate = `
+const spellRankTemplate = `
 <div class="form-group">
     <p>What spell are you attempting to learn?</p>
     <input id="target-spell" placeholder="Drag and drop a compendium spell here..." style="width: 100%;"/>
-    <sub>Drag the spell from the Spell Compendium browser into this box.</sub>
+    <sub>Drag a spell from the Spell Compendium browser into this box.</sub>
 </div>
 
 <p>
@@ -50,15 +50,15 @@ const spellLevelTemplate = `
         <caption>Costs and DCs for learning a spell</caption>
         <thead>
             <tr>
-                <th>Spell Level</th>
+                <th>Spell Rank</th>
                 <th>Price (gp)</th>
                 <th>Suggested DC</th>
             </tr>
         </thead>
         <tbody>
             {{#each learnSpellData}}
-            <tr id="row-{{this.level}}">
-                <td>{{this.level}}</td>
+            <tr id="row-{{this.rank}}">
+                <td>{{this.rank}}</td>
                 <td>{{this.price}}</td>
                 <td>{{this.dc}}</td>
             </tr>
@@ -66,11 +66,11 @@ const spellLevelTemplate = `
         </tbody>
     </table>
 </p>`;
-const compiledSpellLevelTemplate = Handlebars.compile(spellLevelTemplate);
-const spellLevelFormHtml = compiledSpellLevelTemplate({ learnSpellData });
+const compiledSpellRankTemplate = Handlebars.compile(spellRankTemplate);
+const spellRankFormHtml = compiledSpellRankTemplate({ learnSpellData });
 
 const spellcasting = actor.spellcasting?.spellcastingFeatures[0];
-const maxSpellLevel = spellcasting.highestLevel;
+const maxSpellRank = spellcasting.highestLevel;
 const spellTradition = spellcasting.system.tradition.value;
 const hasMagicalShorthand = actor.items.filter(
   (i) => i.system.slug === "magical-shorthand"
@@ -82,7 +82,7 @@ let spell = {};
 
 await Dialog.wait({
   title: dialogTitle,
-  content: spellLevelFormHtml,
+  content: spellRankFormHtml,
   buttons: {
     roll: {
       label: "Continue",
@@ -105,9 +105,9 @@ await Dialog.wait({
         );
         return;
       }
-      if (spell.system.level.value > maxSpellLevel) {
+      if (spell.system.level.value > maxSpellRank) {
         ui.notifications.warn(
-          `You cannot learn Level ${spell.system.level.value} spells yet.`
+          `You cannot learn Rank ${spell.system.level.value} spells yet.`
         );
         return;
       }
@@ -122,34 +122,30 @@ await Dialog.wait({
       html.find(`tr`).css("font-weight", "").css("border", "");
 
       // add highlight for target spell level
-      const spellLevelRow = html.find(`#row-${spell.system.level.value}`);
-      spellLevelRow
-        ?.css("font-weight", "bold")
-        .css("border", "1px black solid");
+      const spellRankRow = html.find(`#row-${spell.system.level.value}`);
+      spellRankRow?.css("font-weight", "bold").css("border", "1px black solid");
     };
   },
 });
 
 console.log(
-  `Player selected to learn ${spell.name}, a Level ${spell.system.level.value} spell.`
+  `Player selected to learn ${spell.name}, a Rank ${spell.system.level.value} spell.`
 );
 
 if (!spell) {
-  ui.notifications.warn(`You must select a Spell Level to learn.`);
+  ui.notifications.warn(`You must select a Spell Rank to learn.`);
   return;
 }
 
-let targetLevel = spell.system.level.value;
-let targetDC = learnSpellData.find((d) => d.level === targetLevel)?.dc;
-let targetPrice = learnSpellData.find((d) => d.level === targetLevel)?.price;
+let targetRank = spell.system.level.value;
+let targetDC = learnSpellData.find((d) => d.rank === targetRank)?.dc;
+let targetPrice = learnSpellData.find((d) => d.rank === targetRank)?.price;
 const timeTaken = hasMagicalShorthand
   ? "10 minutes"
-  : `${targetLevel} hour` + (targetLevel > 1 ? `s` : "");
+  : `${targetRank} hour` + (targetRank > 1 ? `s` : "");
 
 const rollLearnTemplate =
-  `<p>You are attempting to learn <b>${
-    spell.name
-  } (Level ${targetLevel})</b>.</p>
+  `<p>You are attempting to learn <b>${spell.name} (Rank ${targetRank})</b>.</p>
 <p>You need to succeed on a <b>DC ${targetDC}</b> skill check.</p>
 <p>Attempting to learn this spell will take <b>${timeTaken}</b>, regardless of the outcome.</p>
 <p>The outcomes for this attempt are summarised below:</p>
@@ -185,8 +181,8 @@ const rollLearnTemplate =
     </tbody>
 </table>
 <p><em>* On any failure you cannot try again until` +
-  (hasMagicalShorthand ? ` one week passes or ` : "") +
-  `you gain a level.` +
+  (hasMagicalShorthand ? ` one week passes or` : "") +
+  ` you gain a level.` +
   (!hasMagicalShorthand
     ? ` You can reduce this to <b>one week</b> by having the <a class="content-link" draggable="true" data-uuid="Compendium.pf2e.feats-srd.Item.v7Bt6hjmzYnLFLeG" data-id="v7Bt6hjmzYnLFLeG" data-type="Item" data-pack="pf2e.feats-srd" data-tooltip="Feat/Feature Item"><i class="fa-solid fa-medal"></i>Magical Shorthand</a> skill feat.</em></p>`
     : "");
@@ -202,7 +198,21 @@ await Dialog.wait({
   },
 });
 
-options = [...actor.getRollOptions()];
+traits = ["concentrate", "exploration"];
+options = [
+  "action:learn-a-spell",
+  "check:type:skill",
+  `check:statistics:${traditionSkills[spellTradition]}`,
+  ...traits,
+  ...actor.getRollOptions(),
+];
+domains = [
+  "all",
+  "check",
+  "skill-check",
+  "learn-a-spell",
+  "learn-a-spell-check",
+];
 notes = [
   {
     outcome: ["criticalSuccess"],
@@ -258,8 +268,10 @@ const rollResult = await game.pf2e.Check.roll(
     action: "learn-a-spell",
     actor: actor,
     token: token ?? null,
-    title: `Skill Check: Learning a Spell (${spell.name} Lv ${targetLevel})`,
+    title: `Learn a Spell (${spell.name} Rank ${targetRank})`,
+    traits,
     options,
+    domains,
     notes,
     dc: { value: targetDC },
     dosAdjustments,
@@ -279,9 +291,12 @@ if (!dryRun && success) {
   }
 
   try {
-    await spellcasting.addSpell(spell);
+    console.log(spellcasting);
+    console.log(spell);
+    await spellcasting.addSpell(spell, {});
     ui.notifications.info(`Added ${spell.name} to your spellcasting list!`);
-  } catch {
+  } catch (ex) {
+    console.log(ex);
     ui.notifications.error(
       `Something went wrong while adding new spell to spellcasting entry.`
     );
@@ -298,35 +313,31 @@ let resultPrice =
     : 0;
 
 if (resultPrice > 0) {
-  let autoDeductGold = await Dialog.wait({
+  let spendGoldCost = await Dialog.wait({
     title: dialogTitle,
-    content: `<p>Deduct the <b>${resultPrice}gp</b> material cost from your inventory?</p>`,
+    content: `<p>You must deduct a material cost of <b>${resultPrice}gp</b> from your inventory.</p>`,
     buttons: {
       yes: {
-        label: "Yes",
+        label: "Spend Gold",
         callback: () => true,
-      },
-      no: {
-        label: "No",
-        callback: () => false,
       },
     },
     default: "yes",
   });
 
-  if (autoDeductGold && !dryRun) {
+  if (spendGoldCost && !dryRun) {
     if (!(await actor.inventory.removeCoins({ gp: resultPrice }))) {
       ui.notifications.error(
         `Failed to deduct expended gold from your inventory. Take a loan from a party member?`
       );
     } else {
       ui.notifications.info(
-        `Spent <b>${resultPrice}gp</b> from inventory for <em>Learning a Spell</em>.`
+        `Spent <b>${resultPrice}gp</b> from inventory for <em>Learn a Spell</em>.`
       );
     }
   }
 
-  const chatMessage = `Spent <b>${resultPrice}gp</b> worth of materials while learning @UUID[${spell.uuid}].`;
+  const chatMessage = `Spent <b>${resultPrice}gp</b> on materials while learning @UUID[${spell.uuid}].`;
   ChatMessage.create({
     flavor: "Learn a Spell",
     content: chatMessage,
