@@ -1,6 +1,6 @@
 /**
  * This macro helps apply the modifications of a [Lingering Composition] or
- * [Fortissimo Composition]performance skill check to an active effect from an
+ * [Fortissimo Composition] performance skill check to an active effect from an
  * appropriate Spell Effect that is already on the invoking actor.
  */
 
