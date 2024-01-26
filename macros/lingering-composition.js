@@ -1,6 +1,7 @@
 /**
- * This macro helps extend the duration of an active [Courageous Anthem] buff effect based on the outcome
- * of a [Lingering Composition] performance skill check.
+ * This macro helps apply the modifications of a [Lingering Composition] or
+ * [Fortissimo Composition]performance skill check to an active effect from an
+ * appropriate Spell Effect that is already on the invoking actor.
  */
 
 const RESULTS = {
@@ -34,7 +35,6 @@ const cantripCompositions = actor.itemTypes.spell.filter(
     s.system.duration.value === "1 round" &&
     s.system.area.type === "emanation"
 );
-console.log(cantripCompositions);
 
 const spellEffect = actor.itemTypes.effect
   .filter((e) => !e.expired && e.parent === actor)
@@ -74,7 +74,6 @@ const compositionValidation = {
 const focusCompositions = actor.itemTypes.spell.filter(
   (s) => s.isFocusSpell && s.traits.has("spellshape")
 );
-console.log(focusCompositions);
 
 const spellOptionHtml = (spell) => {
   return `<img style="width:48px;height:48px;border:none;" src="${spell.img}" /><span style="margin: 3px;">${spell.name}</span>`;
@@ -128,8 +127,6 @@ let performanceOutcome = await Dialog.wait(
       focusCompositions.forEach((spell) => {
         const radio = html.find(`input#${spell.system.slug}`)[0];
         const label = html.find(`label[for=${spell.system.slug}]`);
-        console.log(radio);
-        console.log(label);
 
         radio.onchange = (_) => {
           html.find(`label`).css("border", "2px solid transparent");
@@ -164,42 +161,73 @@ if (
   return;
 }
 
+const actorHasMacroAura = (actor, spell) =>
+  actor.itemTypes.effect.find((e) => e.name === `Aura: ${spell.name}`);
+
+const getAuraDuration = (choice) => {
+  return choice === "lingering-composition"
+    ? getResultModifier(choice, performanceOutcome)
+    : 1;
+};
+
+const generateAuraEffect = (actor, spell, effect) => {
+  return {
+    flags: {
+      core: { sourceId: effect.uuid },
+      pf2e: { itemGrants: {}, rulesSelections: {} },
+    },
+    img: spell.img,
+    name: `Aura: ${spell.name}`,
+    system: {
+      badge: null,
+      context: { origin: actor },
+      description: effect.system.description,
+      duration: {
+        expiry: "turn-start",
+        sustained: false,
+        unit: "rounds",
+        value: getAuraDuration(spellChoiceSlug),
+      },
+      expired: false,
+      fromSpell: false,
+      level: { value: 1 },
+      publication: effect.system.publication,
+      rules: [
+        {
+          key: "Aura",
+          radius: spell.system.area.value,
+          mergeExisting: true,
+          effects: [
+            {
+              uuid: effect.uuid,
+              affects: "allies",
+            },
+          ],
+          appearance: {
+            border: { color: "user-color" },
+          },
+        },
+      ],
+      slug: `aura-${spell.slug}`,
+      start: { value: 0, initiative: null },
+      tokenIcon: { show: true },
+      traits: { otherTags: [], value: [] },
+    },
+    type: "effect",
+  };
+};
+
 // set duration to chosen value and apply aura effect
 try {
   const spellEffectRules = spellEffect.system.rules;
-  const pureSpellEffect = await game.packs
-    .get("pf2e.spell-effects")
-    .getName(spellEffect.name);
-
-  // add an Aura RE to apply the effect
-  const auraRE = {
-    key: "Aura",
-    radius: targetSpell.system.area.value,
-    mergeExisting: false,
-    effects: [
-      {
-        uuid: pureSpellEffect.uuid,
-        affects: "allies",
-      },
-    ],
-    appearance: {
-      border: {
-        color: "user-color",
-      },
-    },
-  };
-  if (!spellEffectRules.find((r) => r.key === "Aura")) {
-    spellEffectRules.push(auraRE);
-  }
-
-  let dataUpdate = {
+  let primaryDataUpdate = {
     "system.rules": spellEffectRules,
   };
 
   switch (spellChoiceSlug) {
     case "lingering-composition":
-      dataUpdate = {
-        ...dataUpdate,
+      primaryDataUpdate = {
+        ...primaryDataUpdate,
         "system.duration.value": getResultModifier(
           spellChoiceSlug,
           performanceOutcome
@@ -216,17 +244,31 @@ try {
     default:
       break;
   }
-  console.log(`applying updates:`);
-  console.log(dataUpdate);
-  await spellEffect.update(dataUpdate);
-  // TODO: duplicate Player effect with .deepClone(..) and turn cloned effect into Aura that
-  // provides the original (but modified) effect in aura radius.
+  console.log(
+    `[Performance Compositions] Updating primary spell effect:`,
+    primaryDataUpdate
+  );
+  await spellEffect.update(primaryDataUpdate);
+
+  // add an Aura to actor that will apply the effect
+  if (!actorHasMacroAura(actor, targetSpell)) {
+    const aura = generateAuraEffect(actor, targetSpell, spellEffect);
+    console.log(`[Performance Compositions] Adding aura to actor`, aura);
+    await actor.createEmbeddedDocuments("Item", [aura]);
+  } else {
+    console.debug(
+      `[Performance Composition] Actor already has an aura from macro.`
+    );
+  }
 
   ui.notifications.info(
     `Successfully applied ${spellChoice.name} to ${spellEffect.name}.`
   );
 } catch (ex) {
-  console.log(ex);
+  console.log(
+    `[Performance Compositions] Failed to modify and apply spell effects:`,
+    ex
+  );
   ui.notifications.error(
     `Failed to apply ${spellChoice.name} to ${spellEffect.name}.`
   );
