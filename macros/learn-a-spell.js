@@ -12,8 +12,10 @@ if (!actor || canvas.tokens.controlled.length !== 1) {
   ui.notifications.warn(`You must select your token.`);
   return;
 }
-if (!actor.isSpellcaster) {
-  ui.notifications.warn(`You must be a spellcaster to <em>Learn a Spell</em>.`);
+if (!actor.isSpellcaster || !actor.spellcasting?.spellcastingFeatures[0]) {
+  ui.notifications.warn(
+    `You must be a spellcaster and have a spellcasting entry to <em>Learn a Spell</em>.`
+  );
   return;
 }
 
@@ -37,11 +39,17 @@ const traditionSkills = {
   occult: "occultism",
   primal: "nature",
 };
+const spellcasting = actor.spellcasting.spellcastingFeatures[0];
+const maxSpellRank = spellcasting.highestRank;
+const tradition = spellcasting.tradition;
 
 const spellRankTemplate = `
-<div class="form-group">
+<div class="form-group" data-tooltip-class="pf2e">
     <p>What spell are you attempting to learn?</p>
-    <input id="target-spell" placeholder="Drag and drop a compendium spell here..." style="width: 100%;"/>
+    <div style="display: flex; align-items: center;">
+      <input id="target-spell" placeholder="Drag and drop a compendium spell here..." style="flex: 1;"/>
+      <a onclick="game.pf2e.compendiumBrowser.openSpellTab({tradition: '${tradition}'}, ${maxSpellRank}, 'spell')" data-tooltip="PF2E.OpenSpellBrowserTitle"><i class="fa-solid fa-search fa-fw"></i></a>
+    </div>
     <sub>Drag a spell from the Spell Compendium browser into this box.</sub>
 </div>
 
@@ -69,15 +77,12 @@ const spellRankTemplate = `
 const compiledSpellRankTemplate = Handlebars.compile(spellRankTemplate);
 const spellRankFormHtml = compiledSpellRankTemplate({ learnSpellData });
 
-const spellcasting = actor.spellcasting?.spellcastingFeatures[0];
-const maxSpellRank = spellcasting.highestLevel;
-const spellTradition = spellcasting.system.tradition.value;
-const hasMagicalShorthand = actor.items.filter(
-  (i) => i.system.slug === "magical-shorthand"
-)?.length;
-const hasSpellbookProdigy = actor.items.filter(
-  (i) => i.system.slug === "spellbook-prodigy"
-)?.length;
+const hasMagicalShorthand = !!actor.itemTypes.feat.find(
+  (f) => f.system.slug === "magical-shorthand"
+);
+const hasSpellbookProdigy = !!actor.itemTypes.feat.find(
+  (f) => f.system.slug === "spellbook-prodigy"
+);
 let spell = {};
 
 await Dialog.wait({
@@ -149,7 +154,7 @@ const rollLearnTemplate =
 <p>You need to succeed on a <b>DC ${targetDC}</b> skill check.</p>
 <p>Attempting to learn this spell will take <b>${timeTaken}</b>, regardless of the outcome.</p>
 <p>The outcomes for this attempt are summarised below:</p>
-<table style="text-align: center">
+<table style="text-align: center" data-tooltip-class="pf2e">
     <thead>
         <tr>
             <th>Outcome</th>
@@ -158,12 +163,12 @@ const rollLearnTemplate =
         </tr>
     </thead>
     <tbody>
-        <tr style="color:green">
+        <tr style="color:green;">
             <td>Critical Success</td>
             <td>Yes</td>
             <td>${targetPrice / 2}</td>
         </tr>
-        <tr>
+        <tr ${hasMagicalShorthand ? "style=text-decoration:line-through;\" data-tooltip=\"Magical Shorthand\"" : ""}">
             <td>Success</td>
             <td>Yes</td>
             <td>${targetPrice}</td>
@@ -173,7 +178,7 @@ const rollLearnTemplate =
             <td>No *</td>
             <td>–</td>
         </tr>
-        <tr style="color:red">
+        <tr style="color:red;${hasSpellbookProdigy ? "text-decoration:line-through;\" data-tooltip=\"Spellbook Prodigy\"" : "\""}>
             <td>Critical Failure</td>
             <td>No *</td>
             <td>${targetPrice / 2}</td>
@@ -202,7 +207,7 @@ traits = ["concentrate", "exploration"];
 options = [
   "action:learn-a-spell",
   "check:type:skill",
-  `check:statistics:${traditionSkills[spellTradition]}`,
+  `check:statistics:${traditionSkills[tradition]}`,
   ...traits,
   ...actor.getRollOptions(),
 ];
@@ -216,7 +221,7 @@ domains = [
 notes = [
   {
     outcome: ["criticalSuccess"],
-    selector: traditionSkills[spellTradition],
+    selector: traditionSkills[tradition],
     text: `<b>Critical Success</b> You learn @UUID[${
       spell.uuid
     }] and expend only half of the materials worth <b>${
@@ -225,17 +230,17 @@ notes = [
   },
   {
     outcome: ["success"],
-    selector: traditionSkills[spellTradition],
+    selector: traditionSkills[tradition],
     text: `<b>Success</b> You learn @UUID[${spell.uuid}] and expend materials worth <b>${targetPrice}gp</b>.`,
   },
   {
     outcome: ["failure"],
-    selector: traditionSkills[spellTradition],
+    selector: traditionSkills[tradition],
     text: `<b>Failure</b> You do not learn @UUID[${spell.uuid}].`,
   },
   {
     outcome: ["criticalFailure"],
-    selector: traditionSkills[spellTradition],
+    selector: traditionSkills[tradition],
     text: `<b>Critical Failure</b> You do not learn @UUID[${
       spell.uuid
     }] and expend half of the materials worth <b>${targetPrice / 2}gp</b>.`,
@@ -260,7 +265,7 @@ if (hasSpellbookProdigy) {
 const rollResult = await game.pf2e.Check.roll(
   new game.pf2e.CheckModifier(
     `learn-a-spell`,
-    actor.skills[traditionSkills[spellTradition]]
+    actor.skills[traditionSkills[tradition]]
   ),
   {
     type: ["skill-check"],
