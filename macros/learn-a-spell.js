@@ -1,6 +1,5 @@
 /**
  * This macro helps step through the [Learn A Spell] activity for a spellcaster.
- * For now, it assumes the character is a Wizard and rolls the skill check with Arcana.
  *
  * Pending improvements:
  *  - Automate DC adjustments for uncommon/rare.
