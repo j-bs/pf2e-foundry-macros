@@ -1,8 +1,5 @@
 /**
  * This macro helps step through the [Learn A Spell] activity for a spellcaster.
- *
- * Pending improvements:
- *  - Automate DC adjustments for uncommon/rare.
  */
 
 let actor = token.actor;
@@ -181,7 +178,11 @@ const rollLearnTemplate =
             <td>Yes</td>
             <td>${targetPrice / 2}</td>
         </tr>
-        <tr ${hasMagicalShorthand ? "style=text-decoration:line-through;\" data-tooltip=\"Magical Shorthand\"" : ""}">
+        <tr ${
+          hasMagicalShorthand
+            ? 'style=text-decoration:line-through;" data-tooltip="Magical Shorthand"'
+            : ""
+        }">
             <td>Success</td>
             <td>Yes</td>
             <td>${targetPrice}</td>
@@ -191,7 +192,11 @@ const rollLearnTemplate =
             <td>No *</td>
             <td>–</td>
         </tr>
-        <tr style="color:red;${hasSpellbookProdigy ? "text-decoration:line-through;\" data-tooltip=\"Spellbook Prodigy\"" : "\""}>
+        <tr style="color:red;${
+          hasSpellbookProdigy
+            ? 'text-decoration:line-through;" data-tooltip="Spellbook Prodigy"'
+            : '"'
+        }>
             <td>Critical Failure</td>
             <td>No *</td>
             <td>${targetPrice / 2}</td>
