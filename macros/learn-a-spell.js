@@ -38,6 +38,20 @@ const traditionSkills = {
   occult: "occultism",
   primal: "nature",
 };
+const rarityDC = {
+  common: 0,
+  uncommon: 2,
+  rare: 5,
+  unique: 10,
+};
+function adjustDCByRarity(dc, spell) {
+  const rarity = spell.rarity;
+  if (!spell || !rarity) {
+    return dc;
+  }
+
+  return dc + (rarityDC[rarity] ?? 0);
+}
 const spellcasting = actor.spellcasting.spellcastingFeatures[0];
 const maxSpellRank = spellcasting.highestRank;
 const tradition = spellcasting.tradition;
@@ -109,9 +123,9 @@ await Dialog.wait({
         );
         return;
       }
-      if (spell.system.level.value > maxSpellRank) {
+      if (spell.rank > maxSpellRank) {
         ui.notifications.warn(
-          `You cannot learn Rank ${spell.system.level.value} spells yet.`
+          `You cannot learn Rank ${spell.rank} spells yet.`
         );
         return;
       }
@@ -126,14 +140,14 @@ await Dialog.wait({
       html.find(`tr`).css("font-weight", "").css("border", "");
 
       // add highlight for target spell level
-      const spellRankRow = html.find(`#row-${spell.system.level.value}`);
+      const spellRankRow = html.find(`#row-${spell.rank}`);
       spellRankRow?.css("font-weight", "bold").css("border", "1px black solid");
     };
   },
 });
 
 console.log(
-  `Player selected to learn ${spell.name}, a Rank ${spell.system.level.value} spell.`
+  `Player selected to learn ${spell.name}, a Rank ${spell.rank} spell.`
 );
 
 if (!spell) {
@@ -141,9 +155,9 @@ if (!spell) {
   return;
 }
 
-let targetRank = spell.system.level.value;
-let targetDC = learnSpellData.find((d) => d.rank === targetRank)?.dc;
-let targetPrice = learnSpellData.find((d) => d.rank === targetRank)?.price;
+let targetRank = spell.rank;
+let targetDC = adjustDCByRarity(learnSpellData.find((d) => d.rank === targetRank).dc, spell);
+let targetPrice = learnSpellData.find((d) => d.rank === targetRank).price;
 const timeTaken = hasMagicalShorthand
   ? "10 minutes"
   : `${targetRank} hour` + (targetRank > 1 ? `s` : "");
