@@ -1,0 +1,22 @@
+{
+  "name": "pf2e-foundry-macros",
+  "version": "0.1.0",
+  "description": "Various macros for the PF2E system on FoundryVTT",
+  "scripts": {
+    "tsc": "npx tsc -p tsconfig.json"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/j-bs/pf2e-foundry-macros.git"
+  },
+  "author": "JBS",
+  "license": "GPL-3.0",
+  "bugs": {
+    "url": "https://github.com/j-bs/pf2e-foundry-macros/issues"
+  },
+  "homepage": "https://github.com/j-bs/pf2e-foundry-macros#readme",
+  "devDependencies": {
+    "handlebars": "4.7.8",
+    "typescript": "5.4.2"
+  }
+}
